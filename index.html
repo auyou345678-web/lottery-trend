@@ -21,7 +21,7 @@
     
     .th-main { background: #f7ba5b; color: #443209; font-weight: bold; }
     .sub-head { background: #feeccd; color: #624b17; }
-    .period-col { width: 105px; }
+    .period-col { width: 110px; }
     .nums-col { width: 165px; letter-spacing: 1px; font-weight: bold; }
     
     .omit { color: #aaa; font-size: 11px; }
@@ -36,7 +36,9 @@
       position: absolute; top: 0; left: 0;
       pointer-events: none; z-index: 5;
     }
-    .status-tip { font-size: 13px; color: #28a745; font-weight: 500; }
+    .status-tip { font-size: 13px; color: #059669; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
   </style>
 </head>
 <body>
@@ -47,7 +49,7 @@
       <button class="tab-btn" data-lot="ft">幸运飞艇</button>
     </div>
     <div class="tabs" id="posTabs"></div>
-    <div class="status-tip" id="statusTip">正在连接实时数据...</div>
+    <div class="status-tip" id="statusTip"><span class="status-dot"></span>正在同步最新数据...</div>
   </div>
 
   <div class="table-card">
@@ -81,7 +83,7 @@
     let currentPos = 0;
     let cachedTrends = [];
 
-    // 初始化名次切换按钮
+    // 初始化 1-10 名选项卡
     const posTabsContainer = document.getElementById("posTabs");
     for (let i = 0; i < 10; i++) {
       const btn = document.createElement("button");
@@ -107,7 +109,7 @@
       };
     });
 
-    // 格式化解析数据并计算 30 期遗漏值
+    // 计算 30 期遗漏值与走势（自上而下升序：最上面最老，最下面最新）
     function parseAndComputeTrends(items) {
       let parsed = [];
       for (const item of items) {
@@ -127,7 +129,7 @@
         }
       }
 
-      // 升序排列：旧 -> 新（截取最新 30 期）
+      // 按期号升序：旧 -> 新，截取最新 30 期
       parsed.sort((a, b) => String(a.period).localeCompare(String(b.period)));
       parsed = parsed.slice(-30);
 
@@ -157,7 +159,7 @@
           posData.push(posMap);
         }
 
-        trends.push({
+        trends.append ? null : trends.push({
           period: row.period,
           numbers: nums,
           sum: nums[0] + nums[1],
@@ -169,42 +171,53 @@
       return trends;
     }
 
-    // 实时抓取数据（优先直连 168 接口，data.json 为保底）
+    // 智能多路由轮询拉取最新开奖
     async function fetchLatestData() {
       const tip = document.getElementById("statusTip");
       const lotCode = LOT_CODES[currentLot];
-      const targetUrl = `https://api.1680210.com/pks/getPksHistoryList.do?lotCode=${lotCode}`;
-      
-      // 使用快速反向代理避免跨域限制
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`;
+      const targetApi = `https://api.1680210.com/pks/getPksHistoryList.do?lotCode=${lotCode}`;
 
-      try {
-        const res = await fetch(proxyUrl);
-        if (!res.ok) throw new Error("代理接口响应异常");
-        const json = await res.json();
-        const rows = (json && json.result && json.result.data) || json.rows || json.data || [];
-        if (rows.length > 0) {
-          cachedTrends = parseAndComputeTrends(rows);
-          tip.innerText = `● 实时监控中 (最新期: ${cachedTrends[cachedTrends.length - 1].period})`;
-          renderTable();
-          return;
+      // 备用多代理通路，避免跨域阻断
+      const proxies = [
+        `https://corsproxy.io/?${encodeURIComponent(targetApi)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetApi)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(targetApi)}&t=${Date.now()}`
+      ];
+
+      for (const url of proxies) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 4000);
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(timer);
+
+          if (res.ok) {
+            const json = await res.json();
+            const rows = (json && json.result && json.result.data) || json.rows || json.data || [];
+            if (rows && rows.length > 0) {
+              cachedTrends = parseAndComputeTrends(rows);
+              const latest = cachedTrends[cachedTrends.length - 1];
+              tip.innerHTML = `<span class="status-dot"></span> 实时监控中 (最新期: ${latest.period})`;
+              renderTable();
+              return;
+            }
+          }
+        } catch (e) {
+          // 当前通道失败，自动尝试下一个
+          continue;
         }
-      } catch (e) {
-        console.warn("实时接口同步失败，切换为本地存储源:", e);
       }
 
-      // 保底回退读取仓库 data.json
+      // 保底机制：若代理均受阻，读取 data.json
       try {
-        const fallbackRes = await fetch('./data.json?t=' + Date.now());
-        const store = await fallbackRes.json();
+        const fb = await fetch('./data.json?t=' + Date.now());
+        const store = await fb.json();
         if (store && store[currentLot]) {
           cachedTrends = store[currentLot].trends || [];
-          tip.innerText = "数据已同步";
+          tip.innerHTML = `<span class="status-dot" style="background:#f59e0b;"></span> 数据已同步至仓库版本`;
           renderTable();
         }
-      } catch (err) {
-        tip.innerText = "正在尝试重连...";
-      }
+      } catch (err) {}
     }
 
     function renderTable() {
@@ -270,8 +283,8 @@
     window.addEventListener("resize", drawLines);
     window.addEventListener("load", () => {
       fetchLatestData();
-      // 设置 10 秒自动轮询一次最新结果
-      setInterval(fetchLatestData, 10000);
+      // 每 8 秒自动拉取一次最新开奖
+      setInterval(fetchLatestData, 8000);
     });
   </script>
 </body>
