@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>开奖走势图 - 澳洲幸运10 / 幸运飞艇</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f0f2f5; padding: 15px; }
+    .header-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; background: #fff; padding: 12px 20px; border-radius: 6px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tab-btn, .pos-btn { border: 1px solid #d9d9d9; background: #fff; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; }
+    .tab-btn.active { background: #e02424; color: #fff; border-color: #e02424; }
+    .pos-btn.active { background: #1677ff; color: #fff; border-color: #1677ff; }
+    
+    .table-card { background: #fff; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow-x: auto; }
+    .table-wrap { position: relative; display: inline-block; min-width: 100%; }
+    
+    table { border-collapse: collapse; text-align: center; font-size: 12px; margin: 0 auto; }
+    th, td { border: 1px solid #f0cc86; width: 28px; height: 26px; padding: 0; }
+    
+    .th-main { background: #f7ba5b; color: #443209; font-weight: bold; }
+    .sub-head { background: #feeccd; color: #624b17; }
+    .period-col { width: 85px; }
+    .nums-col { width: 160px; letter-spacing: 1px; font-weight: bold; }
+    
+    .omit { color: #aaa; font-size: 11px; }
+    .ball {
+      width: 20px; height: 20px; line-height: 20px;
+      margin: 0 auto; border-radius: 50%; color: #fff;
+      font-weight: bold; font-size: 11px; box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+    }
+    .ball-red { background: #e02424; }
+    
+    #trendCanvas {
+      position: absolute; top: 0; left: 0;
+      pointer-events: none; z-index: 5;
+    }
+    .status-tip { font-size: 13px; color: #888; }
+  </style>
+</head>
+<body>
+
+  <div class="header-bar">
+    <div class="tabs" id="lotteryTabs">
+      <button class="tab-btn active" data-lot="au10">澳洲幸运10</button>
+      <button class="tab-btn" data-lot="ft">幸运飞艇</button>
+    </div>
+    <div class="tabs" id="posTabs">
+      <!-- 动态生成 第1名 ~ 第10名 按钮 -->
+    </div>
+    <div class="status-tip" id="statusTip">加载中...</div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-wrap">
+      <canvas id="trendCanvas"></canvas>
+      <table id="trendTable">
+        <thead>
+          <tr class="th-main">
+            <th rowspan="2" class="period-col">期号</th>
+            <th rowspan="2" class="nums-col">开奖号</th>
+            <th colspan="10" class="sub-head" id="posTitle">第1名走势 (01 - 10)</th>
+            <th rowspan="2" style="width:40px;">冠亚和</th>
+            <th rowspan="2" style="width:40px;">跨度</th>
+          </tr>
+          <tr class="sub-head">
+            <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th>
+          </tr>
+        </thead>
+        <tbody id="dataBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let rawStore = null;
+    let currentLot = "au10";
+    let currentPos = 0;
+
+    // 初始化名次选择按钮 (第1名 至 第10名)
+    const posTabsContainer = document.getElementById("posTabs");
+    for (let i = 0; i < 10; i++) {
+      const btn = document.createElement("button");
+      btn.className = `pos-btn ${i === 0 ? 'active' : ''}`;
+      btn.innerText = `第${i + 1}名`;
+      btn.onclick = () => {
+        document.querySelectorAll(".pos-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentPos = i;
+        document.getElementById("posTitle").innerText = `第${i + 1}名走势 (01 - 10)`;
+        render();
+      };
+      posTabsContainer.appendChild(btn);
+    }
+
+    // 彩种切换 (澳洲幸运10 / 幸运飞艇)
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentLot = btn.dataset.lot;
+        render();
+      };
+    });
+
+    async function init() {
+      const tip = document.getElementById("statusTip");
+      try {
+        const res = await fetch('./data.json?t=' + Date.now());
+        if (!res.ok) throw new Error("数据文件尚在生成中");
+        rawStore = await res.json();
+        tip.innerText = "数据已同步最新20期";
+        render();
+      } catch (e) {
+        tip.innerText = "等待首次定时采集生成数据...";
+        console.warn(e);
+      }
+    }
+
+    function render() {
+      if (!rawStore || !rawStore[currentLot]) return;
+      const trends = rawStore[currentLot].trends || [];
+      const tbody = document.getElementById("dataBody");
+      tbody.innerHTML = "";
+
+      trends.forEach((row) => {
+        const tr = document.createElement("tr");
+        const posData = row.positions[currentPos];
+
+        let html = `<td style="color:#555; background:#fafafa;">${row.period}</td>`;
+        html += `<td style="font-size:11px; color:#333;">${row.numbers.map(n => String(n).padStart(2, '0')).join(' ')}</td>`;
+
+        for (let num = 1; num <= 10; num++) {
+          const item = posData ? posData[String(num)] : null;
+          if (item && item.hit) {
+            html += `<td><div class="ball ball-red" data-ball="true">${num}</div></td>`;
+          } else {
+            html += `<td class="omit">${item ? item.omit : ''}</td>`;
+          }
+        }
+
+        html += `<td>${row.sum}</td><td>${row.span}</td>`;
+        tr.innerHTML = html;
+        tbody.appendChild(tr);
+      });
+
+      requestAnimationFrame(drawLines);
+    }
+
+    function drawLines() {
+      const canvas = document.getElementById("trendCanvas");
+      const table = document.getElementById("trendTable");
+      if (!table || !canvas) return;
+
+      canvas.width = table.offsetWidth;
+      canvas.height = table.offsetHeight;
+
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = "#e02424";
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+
+      const balls = document.querySelectorAll('#dataBody .ball[data-ball="true"]');
+      const tableRect = table.getBoundingClientRect();
+
+      balls.forEach((ball, idx) => {
+        const rect = ball.getBoundingClientRect();
+        const x = rect.left - tableRect.left + rect.width / 2;
+        const y = rect.top - tableRect.top + rect.height / 2;
+
+        if (idx === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      });
+      ctx.stroke();
+    }
+
+    window.addEventListener("resize", drawLines);
+    window.addEventListener("load", init);
+  </script>
+</body>
+</html>
