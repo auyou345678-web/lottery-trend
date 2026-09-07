@@ -33,7 +33,7 @@ def fetch_raw_data(lot_code):
     return []
 
 def parse_items(items):
-    """提取期号与 1~10 名车号，并取最近 20 期（按期号由旧到新排序）"""
+    """提取期号与 1~10 名车号，并取最近 30 期（按期号由旧到新排序）"""
     parsed = []
     for item in items:
         period = str(item.get("preDrawIssue") or item.get("issue") or item.get("period", ""))
@@ -49,15 +49,15 @@ def parse_items(items):
         if len(nums) == 10:
             parsed.append({"period": period, "numbers": nums})
 
-    # 按期号升序，截取最新 20 期
+    # 按期号升序，截取最新 30 期
     parsed.sort(key=lambda x: str(x["period"]))
-    return parsed[-20:]
+    return parsed[-30:]
 
-def calculate_omits_and_stats(history_20):
+def calculate_omits_and_stats(history_30):
     trends = []
     current_omits = [{num: 0 for num in range(1, 11)} for _ in range(10)]
 
-    for row in history_20:
+    for row in history_30:
         nums = row["numbers"]
         pos_omits = []
 
@@ -106,7 +106,7 @@ def main():
 
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
-    print("成功更新 data.json，保留最新 20 期记录。")
+    print("成功更新 data.json，保留最新 30 期记录。")
 
 if __name__ == "__main__":
     main()
