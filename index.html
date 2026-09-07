@@ -106,7 +106,7 @@
         const res = await fetch('./data.json?t=' + Date.now());
         if (!res.ok) throw new Error("数据文件尚在生成中");
         rawStore = await res.json();
-        tip.innerText = "数据已同步最新20期";
+        tip.innerText = "数据已同步最新记录";
         render();
       } catch (e) {
         tip.innerText = "等待首次定时采集生成数据...";
@@ -120,10 +120,10 @@
       const tbody = document.getElementById("dataBody");
       tbody.innerHTML = "";
 
-      // 逆转顺序：期号从旧到新（最新期号在最上方，由下往上推）
-      const reversedTrends = [...trends].reverse();
+      // 严格升序排列：最上面是老期号，往下依次递增，最下方紧靠表头的是最新一期
+      const sortedTrends = [...trends].sort((a, b) => String(a.period).localeCompare(String(b.period)));
 
-      reversedTrends.forEach((row) => {
+      sortedTrends.forEach((row) => {
         const tr = document.createElement("tr");
         const posData = row.positions[currentPos];
 
