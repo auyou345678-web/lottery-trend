@@ -13,8 +13,8 @@
     .tab-btn.active { background: #e02424; color: #fff; border-color: #e02424; }
     .pos-btn.active { background: #1677ff; color: #fff; border-color: #1677ff; }
     
-    .table-card { background: #fff; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow-x: auto; }
-    .table-wrap { position: relative; display: inline-block; min-width: 100%; }
+    .table-card { background: #fff; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow-x: auto; text-align: center; }
+    .table-wrap { position: relative; display: inline-block; }
     
     table { border-collapse: collapse; text-align: center; font-size: 12px; margin: 0 auto; }
     th, td { border: 1px solid #f0cc86; width: 28px; height: 26px; padding: 0; }
@@ -46,9 +46,7 @@
       <button class="tab-btn active" data-lot="au10">澳洲幸运10</button>
       <button class="tab-btn" data-lot="ft">幸运飞艇</button>
     </div>
-    <div class="tabs" id="posTabs">
-      <!-- 动态生成 第1名 ~ 第10名 按钮 -->
-    </div>
+    <div class="tabs" id="posTabs"></div>
     <div class="status-tip" id="statusTip">加载中...</div>
   </div>
 
@@ -78,7 +76,6 @@
     let currentLot = "au10";
     let currentPos = 0;
 
-    // 初始化名次选择按钮 (第1名 至 第10名)
     const posTabsContainer = document.getElementById("posTabs");
     for (let i = 0; i < 10; i++) {
       const btn = document.createElement("button");
@@ -94,7 +91,6 @@
       posTabsContainer.appendChild(btn);
     }
 
-    // 彩种切换 (澳洲幸运10 / 幸运飞艇)
     document.querySelectorAll(".tab-btn").forEach(btn => {
       btn.onclick = () => {
         document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
@@ -145,13 +141,14 @@
         tbody.appendChild(tr);
       });
 
-      requestAnimationFrame(drawLines);
+      setTimeout(drawLines, 50);
     }
 
     function drawLines() {
       const canvas = document.getElementById("trendCanvas");
+      const tableWrap = document.querySelector(".table-wrap");
       const table = document.getElementById("trendTable");
-      if (!table || !canvas) return;
+      if (!tableWrap || !canvas || !table) return;
 
       canvas.width = table.offsetWidth;
       canvas.height = table.offsetHeight;
@@ -163,12 +160,12 @@
       ctx.beginPath();
 
       const balls = document.querySelectorAll('#dataBody .ball[data-ball="true"]');
-      const tableRect = table.getBoundingClientRect();
+      const wrapRect = tableWrap.getBoundingClientRect();
 
       balls.forEach((ball, idx) => {
         const rect = ball.getBoundingClientRect();
-        const x = rect.left - tableRect.left + rect.width / 2;
-        const y = rect.top - tableRect.top + rect.height / 2;
+        const x = rect.left - wrapRect.left + rect.width / 2;
+        const y = rect.top - wrapRect.top + rect.height / 2;
 
         if (idx === 0) {
           ctx.moveTo(x, y);
