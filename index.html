@@ -54,19 +54,19 @@
     <div class="table-wrap">
       <canvas id="trendCanvas"></canvas>
       <table id="trendTable">
-        <thead>
-          <tr class="th-main">
+        <tbody id="dataBody"></tbody>
+        <tfoot>
+          <tr class="sub-head">
             <th rowspan="2" class="period-col">期号</th>
             <th rowspan="2" class="nums-col">开奖号</th>
-            <th colspan="10" class="sub-head" id="posTitle">第1名走势 (01 - 10)</th>
+            <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th>
             <th rowspan="2" style="width:40px;">冠亚和</th>
             <th rowspan="2" style="width:40px;">跨度</th>
           </tr>
-          <tr class="sub-head">
-            <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th>
+          <tr class="th-main">
+            <th colspan="10" class="sub-head" id="posTitle">第1名走势 (01 - 10)</th>
           </tr>
-        </thead>
-        <tbody id="dataBody"></tbody>
+        </tfoot>
       </table>
     </div>
   </div>
@@ -120,7 +120,10 @@
       const tbody = document.getElementById("dataBody");
       tbody.innerHTML = "";
 
-      trends.forEach((row) => {
+      // 逆转顺序：期号从旧到新（最新期号在最上方，由下往上推）
+      const reversedTrends = [...trends].reverse();
+
+      reversedTrends.forEach((row) => {
         const tr = document.createElement("tr");
         const posData = row.positions[currentPos];
 
