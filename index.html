@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>开奖走势图 - 澳洲幸运10 / 幸运飞艇</title>
+  <title>实时开奖走势图 - 澳洲幸运10 / 幸运飞艇</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f0f2f5; padding: 15px; }
@@ -21,8 +21,8 @@
     
     .th-main { background: #f7ba5b; color: #443209; font-weight: bold; }
     .sub-head { background: #feeccd; color: #624b17; }
-    .period-col { width: 85px; }
-    .nums-col { width: 160px; letter-spacing: 1px; font-weight: bold; }
+    .period-col { width: 105px; }
+    .nums-col { width: 165px; letter-spacing: 1px; font-weight: bold; }
     
     .omit { color: #aaa; font-size: 11px; }
     .ball {
@@ -36,7 +36,7 @@
       position: absolute; top: 0; left: 0;
       pointer-events: none; z-index: 5;
     }
-    .status-tip { font-size: 13px; color: #888; }
+    .status-tip { font-size: 13px; color: #28a745; font-weight: 500; }
   </style>
 </head>
 <body>
@@ -47,7 +47,7 @@
       <button class="tab-btn" data-lot="ft">幸运飞艇</button>
     </div>
     <div class="tabs" id="posTabs"></div>
-    <div class="status-tip" id="statusTip">加载中...</div>
+    <div class="status-tip" id="statusTip">正在连接实时数据...</div>
   </div>
 
   <div class="table-card">
@@ -72,10 +72,16 @@
   </div>
 
   <script>
-    let rawStore = null;
+    const LOT_CODES = {
+      au10: "10012",
+      ft: "10057"
+    };
+
     let currentLot = "au10";
     let currentPos = 0;
+    let cachedTrends = [];
 
+    // 初始化名次切换按钮
     const posTabsContainer = document.getElementById("posTabs");
     for (let i = 0; i < 10; i++) {
       const btn = document.createElement("button");
@@ -86,56 +92,138 @@
         btn.classList.add("active");
         currentPos = i;
         document.getElementById("posTitle").innerText = `第${i + 1}名走势 (01 - 10)`;
-        render();
+        renderTable();
       };
       posTabsContainer.appendChild(btn);
     }
 
+    // 彩种切换
     document.querySelectorAll(".tab-btn").forEach(btn => {
       btn.onclick = () => {
         document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         currentLot = btn.dataset.lot;
-        render();
+        fetchLatestData();
       };
     });
 
-    async function init() {
+    // 格式化解析数据并计算 30 期遗漏值
+    function parseAndComputeTrends(items) {
+      let parsed = [];
+      for (const item of items) {
+        const period = String(item.preDrawIssue || item.issue || item.period || "");
+        const codeStr = String(item.preDrawCode || item.code || item.numbers || "");
+        if (!period || !codeStr) continue;
+
+        let nums = [];
+        if (codeStr.includes(",")) {
+          nums = codeStr.split(",").map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n));
+        } else {
+          nums = codeStr.split(/\s+/).map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n));
+        }
+
+        if (nums.length === 10) {
+          parsed.push({ period, numbers: nums });
+        }
+      }
+
+      // 升序排列：旧 -> 新（截取最新 30 期）
+      parsed.sort((a, b) => String(a.period).localeCompare(String(b.period)));
+      parsed = parsed.slice(-30);
+
+      const trends = [];
+      const omits = Array.from({ length: 10 }, () => {
+        const obj = {};
+        for (let n = 1; n <= 10; n++) obj[n] = 0;
+        return obj;
+      });
+
+      parsed.forEach(row => {
+        const nums = row.numbers;
+        const posData = [];
+
+        for (let pos = 0; pos < 10; pos++) {
+          const hit = nums[pos];
+          const posMap = {};
+          for (let n = 1; n <= 10; n++) {
+            if (n === hit) {
+              posMap[String(n)] = { hit: true, omit: 0 };
+              omits[pos][n] = 0;
+            } else {
+              omits[pos][n] += 1;
+              posMap[String(n)] = { hit: false, omit: omits[pos][n] };
+            }
+          }
+          posData.push(posMap);
+        }
+
+        trends.push({
+          period: row.period,
+          numbers: nums,
+          sum: nums[0] + nums[1],
+          span: Math.abs(nums[0] - nums[1]),
+          positions: posData
+        });
+      });
+
+      return trends;
+    }
+
+    // 实时抓取数据（优先直连 168 接口，data.json 为保底）
+    async function fetchLatestData() {
       const tip = document.getElementById("statusTip");
+      const lotCode = LOT_CODES[currentLot];
+      const targetUrl = `https://api.1680210.com/pks/getPksHistoryList.do?lotCode=${lotCode}`;
+      
+      // 使用快速反向代理避免跨域限制
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`;
+
       try {
-        const res = await fetch('./data.json?t=' + Date.now());
-        if (!res.ok) throw new Error("数据文件尚在生成中");
-        rawStore = await res.json();
-        tip.innerText = "数据已同步最新记录";
-        render();
+        const res = await fetch(proxyUrl);
+        if (!res.ok) throw new Error("代理接口响应异常");
+        const json = await res.json();
+        const rows = (json && json.result && json.result.data) || json.rows || json.data || [];
+        if (rows.length > 0) {
+          cachedTrends = parseAndComputeTrends(rows);
+          tip.innerText = `● 实时监控中 (最新期: ${cachedTrends[cachedTrends.length - 1].period})`;
+          renderTable();
+          return;
+        }
       } catch (e) {
-        tip.innerText = "等待首次定时采集生成数据...";
-        console.warn(e);
+        console.warn("实时接口同步失败，切换为本地存储源:", e);
+      }
+
+      // 保底回退读取仓库 data.json
+      try {
+        const fallbackRes = await fetch('./data.json?t=' + Date.now());
+        const store = await fallbackRes.json();
+        if (store && store[currentLot]) {
+          cachedTrends = store[currentLot].trends || [];
+          tip.innerText = "数据已同步";
+          renderTable();
+        }
+      } catch (err) {
+        tip.innerText = "正在尝试重连...";
       }
     }
 
-    function render() {
-      if (!rawStore || !rawStore[currentLot]) return;
-      const trends = rawStore[currentLot].trends || [];
+    function renderTable() {
       const tbody = document.getElementById("dataBody");
       tbody.innerHTML = "";
 
-      // 严格升序排列：最上面是老期号，往下依次递增，最下方紧靠表头的是最新一期
-      const sortedTrends = [...trends].sort((a, b) => String(a.period).localeCompare(String(b.period)));
-
-      sortedTrends.forEach((row) => {
+      cachedTrends.forEach(row => {
         const tr = document.createElement("tr");
-        const posData = row.positions[currentPos];
+        const posMap = row.positions[currentPos];
 
         let html = `<td style="color:#555; background:#fafafa;">${row.period}</td>`;
         html += `<td style="font-size:11px; color:#333;">${row.numbers.map(n => String(n).padStart(2, '0')).join(' ')}</td>`;
 
         for (let num = 1; num <= 10; num++) {
-          const item = posData ? posData[String(num)] : null;
-          if (item && item.hit) {
+          const cell = posMap ? posMap[String(num)] : null;
+          if (cell && cell.hit) {
             html += `<td><div class="ball ball-red" data-ball="true">${num}</div></td>`;
           } else {
-            html += `<td class="omit">${item ? item.omit : ''}</td>`;
+            html += `<td class="omit">${cell ? cell.omit : ''}</td>`;
           }
         }
 
@@ -144,7 +232,7 @@
         tbody.appendChild(tr);
       });
 
-      setTimeout(drawLines, 50);
+      setTimeout(drawLines, 30);
     }
 
     function drawLines() {
@@ -180,7 +268,11 @@
     }
 
     window.addEventListener("resize", drawLines);
-    window.addEventListener("load", init);
+    window.addEventListener("load", () => {
+      fetchLatestData();
+      // 设置 10 秒自动轮询一次最新结果
+      setInterval(fetchLatestData, 10000);
+    });
   </script>
 </body>
 </html>
